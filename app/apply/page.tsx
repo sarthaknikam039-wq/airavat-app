@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "../supabaseClient";
 
 export default function ApplyPage() {
+  const router = useRouter();
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [formData, setFormData] = useState({
     applicant_name: "",
     phone_number: "",
@@ -15,6 +19,17 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  // लॉगिन तपासणे: लॉगिन नसेल तर थेट /login पानावर पाठवेल
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.replace("/login");
+      } else {
+        setAuthChecking(false);
+      }
+    });
+  }, [router]);
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
@@ -22,6 +37,11 @@ export default function ApplyPage() {
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace("/login");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,14 +78,30 @@ export default function ApplyPage() {
     }
   };
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p className="text-slate-600 font-medium">खाते तपासत आहे...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
       <div className="max-w-xl mx-auto bg-white rounded-xl shadow-md p-6 sm:p-8">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
           <h1 className="text-2xl font-bold text-slate-800">AIRAVAT सेवा अर्ज</h1>
-          <Link href="/" className="text-sm font-medium text-blue-600 hover:underline">
-            ← मागे जा
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-sm font-medium text-blue-600 hover:underline">
+              ← होम
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors"
+            >
+              लॉगआउट
+            </button>
+          </div>
         </div>
 
         {message && (
@@ -139,23 +175,4 @@ export default function ApplyPage() {
               value={formData.notes}
               onChange={handleChange}
               placeholder="काही विशेष सूचना असल्यास इथे लिहा..."
-              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full py-3 px-4 rounded-lg text-white font-semibold shadow transition-all ${
-              loading
-                ? "bg-slate-400 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700 active:scale-95"
-            }`}
-          >
-            {loading ? "अर्ज जमा होत आहे..." : "अर्ज जमा करा (Submit)"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-
