@@ -19,7 +19,6 @@ export default function ApplyPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  // लॉगिन तपासणे: लॉगिन नसेल तर थेट /login पानावर पाठवेल
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
@@ -64,7 +63,7 @@ export default function ApplyPage() {
         throw error;
       }
 
-      setMessage("अर्ज यशस्वीरीत्या जमा झाला आहे! आम्ही लवकरच संपर्क करू.");
+      setMessage("अर्ज यशस्वीरीत्या जमा झाला आहे!");
       setFormData({
         applicant_name: "",
         phone_number: "",
@@ -93,11 +92,11 @@ export default function ApplyPage() {
           <h1 className="text-2xl font-bold text-slate-800">AIRAVAT सेवा अर्ज</h1>
           <div className="flex items-center gap-4">
             <Link href="/" className="text-sm font-medium text-blue-600 hover:underline">
-              ← होम
+              होम
             </Link>
             <button
               onClick={handleLogout}
-              className="text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors"
+              className="text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md"
             >
               लॉगआउट
             </button>
@@ -175,4 +174,23 @@ export default function ApplyPage() {
               value={formData.notes}
               onChange={handleChange}
               placeholder="काही विशेष सूचना असल्यास इथे लिहा..."
-              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full py-3 px-4 rounded-lg text-white font-semibold shadow transition-all ${
+              loading
+                ? "bg-slate-400 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700 active:scale-95"
+            }`}
+          >
+            {loading ? "अर्ज जमा होत आहे..." : "अर्ज जमा करा (Submit)"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
