@@ -1,207 +1,407 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import Link from "next/link";
-import { servicesList, brandConfig } from "./servicesdata";
-import { translations, Language } from "./translations";
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
-export default function Home() {
-  const [lang, setLang] = useState<Language>("en");
-  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+export default function AiravatApp() {
+  // Screens: 'loading' | 'email_otp' | 'set_pin' | 'enter_pin' | 'dashboard'
+  const [screen, setScreen] = useState<'loading' | 'email_otp' | 'set_pin' | 'enter_pin' | 'dashboard'>('loading');
 
-  const t = translations[lang];
+  const [session, setSession] = useState<any>(null);
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const categoryKeys: (keyof typeof t.categories)[] = [
-    "All",
-    "Government",
-    "Education",
-    "Schemes",
-    "Jobs",
-    "Digital",
-  ];
+  // PIN states
+  const [pinInput, setPinInput] = useState('');
+  const [confirmPinInput, setConfirmPinInput] = useState('');
 
-  const filteredServices =
-    selectedCategory === "All"
-      ? servicesList
-      : servicesList.filter((s) => s.category === selectedCategory);
+  // Form states
+  const [formData, setFormData] = useState({
+    applicant_name: '',
+    phone_number: '',
+    service_name: 'नवीन पॅन कार्ड',
+    notes: '',
+  });
+  const [formLoading, setFormLoading] = useState(false);
+  const [formMsg, setFormMsg] = useState('');
+  const [myApplications, setMyApplications] = useState<any[]>([]);
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Top Header */}
-      <header className="bg-[#0f172a] text-white sticky top-0 z-50 shadow-md">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-2xl font-black tracking-wider text-teal-400">
-              {brandConfig.name}
-            </span>
-            <span className="text-[10px] bg-teal-950 text-teal-300 border border-teal-800 px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold">
-              India
-            </span>
-          </div>
+  // 1. App सुरू झाल्यावर session आणि PIN तपासणे (Persistent Login)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleInitialAuth(session);
+    });
 
-          <div className="flex items-center space-x-3">
-            {/* Language Switcher Dropdown */}
-            <select
-              value={lang}
-              onChange={(e) => setLang(e.target.value as Language)}
-              className="bg-slate-800 text-teal-300 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:border-teal-400"
-            >
-              <option value="en">English (EN)</option>
-              <option value="mr">मराठी (MR)</option>
-              <option value="hi">हिंदी (HI)</option>
-            </select>
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setSession(null);
+        setScreen('email_otp');
+      }
+    });
 
-            <Link
-              href="/vault"
-              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg transition hidden sm:inline-block"
-            >
-              {t.vaultBtn}
-            </Link>
+    return () => subscription.unsubscribe();
+  }, []);
 
-            <Link
-              href="/apply"
-              className="text-xs text-slate-300 hover:text-white px-2 py-1.5 transition"
-            >
-              {t.trackBtn}
-            </Link>
+  const handleInitialAuth = (currentSession: any) => {
+    if (!currentSession) {
+      setScreen('email_otp');
+    } else {
+      setSession(currentSession);
+      const savedPin = localStorage.getItem(`airavat_pin_${currentSession.user.id}`);
+      if (savedPin) {
+        setScreen('enter_pin'); // PIN आधीच सेट असेल तर PIN मागणे
+      } else {
+        setScreen('set_pin'); // नसेल तर नवा PIN सेट करायला सांगणे
+      }
+    }
+  };
 
-            <button className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-lg text-xs transition">
-              {t.loginBtn}
-            </button>
-          </div>
-        </div>
-      </header>
+  // 2. Email वर OTP पाठवणे
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({ email });
+    if (error) {
+      alert('त्रुटी: ' + error.message);
+    } else {
+      setOtpSent(true);
+      alert('तुमच्या ईमेलवर ६ अंकी OTP पाठवला आहे!');
+    }
+    setLoading(false);
+  };
 
-      {/* Hero Banner */}
-      <section className="bg-[#0f172a] text-white py-14 px-4 border-b border-slate-800">
-        <div className="max-w-4xl mx-auto text-center space-y-4">
-          <span className="inline-block bg-slate-800/90 text-teal-300 border border-teal-500/30 text-xs px-3 py-1 rounded-full font-medium">
-            {t.brandTagline}
-          </span>
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
-            {t.heroTitle} <br />
-            <span className="text-teal-400">{t.heroSubtitle}</span>
-          </h1>
-          <p className="text-slate-300 text-sm md:text-base max-w-2xl mx-auto leading-relaxed">
-            {t.heroDesc}
-          </p>
-          <div className="pt-2 flex flex-wrap justify-center gap-3">
-            <Link
-              href="/apply"
-              className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold px-6 py-2.5 rounded-xl shadow-lg transition text-sm"
-            >
-              {t.applyBtn}
-            </Link>
-            <Link
-              href="/vault"
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-5 py-2.5 rounded-xl border border-slate-700 transition text-sm"
-            >
-              {t.vaultBtn} 🔐
-            </Link>
-          </div>
-        </div>
-      </section>
+  // 3. OTP Verify करणे
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: otp,
+      type: 'email',
+    });
 
-      {/* Services Grid with Category Filter */}
-      <main className="max-w-6xl mx-auto px-4 py-10">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
-          <div>
-            <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-              {t.availableServices}
-            </h2>
-            <p className="text-xs md:text-sm text-slate-600">{t.servicesSub}</p>
-          </div>
+    if (error) {
+      alert('चुकीचा OTP: ' + error.message);
+    } else if (data.session) {
+      setSession(data.session);
+      const savedPin = localStorage.getItem(`airavat_pin_${data.session.user.id}`);
+      if (savedPin) {
+        setScreen('dashboard');
+        fetchUserApplications(data.session.user.id);
+      } else {
+        setScreen('set_pin');
+      }
+    }
+    setLoading(false);
+  };
 
-          {/* Category Filter Buttons */}
-          <div className="flex flex-wrap gap-2">
-            {categoryKeys.map((key) => (
-              <button
-                key={key}
-                onClick={() => setSelectedCategory(key)}
-                className={`text-xs px-3 py-1.5 rounded-full font-medium transition ${
-                  selectedCategory === key
-                    ? "bg-teal-500 text-slate-950 font-bold shadow"
-                    : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-                }`}
-              >
-                {t.categories[key]}
+  // 4. नवा ४ अंकी PIN सेट करणे
+  const handleSaveNewPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput.length !== 4) {
+      alert('पिन फक्त ४ अंकांचा असावा!');
+      return;
+    }
+    if (pinInput !== confirmPinInput) {
+      alert('दोन्ही पिन जुळत नाहीत!');
+      return;
+    }
+    if (session) {
+      localStorage.setItem(`airavat_pin_${session.user.id}`, pinInput);
+      alert('पिन यशस्वीरीत्या सेट झाला!');
+      setScreen('dashboard');
+      fetchUserApplications(session.user.id);
+    }
+  };
+
+  // 5. सेव्ह केलेला PIN तपासून आत जाणे
+  const handleVerifyPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session) return;
+    const savedPin = localStorage.getItem(`airavat_pin_${session.user.id}`);
+    if (pinInput === savedPin) {
+      setScreen('dashboard');
+      fetchUserApplications(session.user.id);
+    } else {
+      alert('चुकीचा पिन! पुन्हा प्रयत्न करा.');
+      setPinInput('');
+    }
+  };
+
+  // 6. User चा जुना डेटा Supabase मधून आणणे (Cloud Backup)
+  const fetchUserApplications = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('applications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setMyApplications(data);
+    }
+  };
+
+  // 7. अर्ज सबमिट करणे (User ID जोडून)
+  const handleSubmitApplication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session) return;
+    setFormLoading(true);
+    setFormMsg('');
+
+    try {
+      const { error } = await supabase.from('applications').insert([
+        {
+          user_id: session.user.id,
+          applicant_name: formData.applicant_name,
+          phone_number: formData.phone_number,
+          service_name: formData.service_name,
+          notes: formData.notes,
+          status: 'Pending',
+        },
+      ]);
+
+      if (error) throw error;
+
+      setFormMsg('अर्ज यशस्वीरीत्या जमा झाला आहे!');
+      setFormData({ applicant_name: '', phone_number: '', service_name: 'नवीन पॅन कार्ड', notes: '' });
+      fetchUserApplications(session.user.id);
+    } catch (err: any) {
+      setFormMsg(`त्रुटी: ${err.message || 'काहीतरी चूक झाली'}`);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setOtpSent(false);
+    setEmail('');
+    setOtp('');
+    setPinInput('');
+    setScreen('email_otp');
+  };
+
+  // --- RENDERING SCREENS ---
+
+  if (screen === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: 'sans-serif' }}>
+        <p style={{ color: '#475569', fontWeight: 600 }}>ॲप सुरू होत आहे...</p>
+      </div>
+    );
+  }
+
+  // SCREEN 1: EMAIL OTP
+  if (screen === 'email_otp') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '16px', fontFamily: 'sans-serif' }}>
+        <div style={{ maxWidth: '360px', width: '100%', padding: '28px', borderRadius: '16px', background: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#0f172a', marginBottom: '8px' }}>AIRAVAT Seva</h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>सुरू करण्यासाठी आपला ईमेल व्हेरिफाय करा</p>
+
+          {!otpSent ? (
+            <form onSubmit={handleSendOtp}>
+              <input
+                type="email"
+                required
+                placeholder="आपला ईमेल आयडी टाका"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', boxSizing: 'border-box' }}
+              />
+              <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                {loading ? 'OTP पाठवत आहे...' : 'OTP मिळवा'}
               </button>
-            ))}
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp}>
+              <input
+                type="text"
+                required
+                placeholder="६ अंकी OTP टाका"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', boxSizing: 'border-box', textAlign: 'center', fontSize: '18px', letterSpacing: '4px' }}
+              />
+              <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#16a34a', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                {loading ? 'तपासत आहे...' : 'लॉगिन करा'}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // SCREEN 2: SET 4-DIGIT PIN
+  if (screen === 'set_pin') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '16px', fontFamily: 'sans-serif' }}>
+        <div style={{ maxWidth: '360px', width: '100%', padding: '28px', borderRadius: '16px', background: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', marginBottom: '6px' }}>४ अंकी पिन सेट करा</h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>पुढच्या वेळी ॲप उघडताना थेट पिनने लॉगिन करता येईल</p>
+
+          <form onSubmit={handleSaveNewPin}>
+            <input
+              type="password"
+              maxLength={4}
+              required
+              placeholder="नवा ४ अंकी पिन"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '12px', boxSizing: 'border-box', textAlign: 'center', fontSize: '20px' }}
+            />
+            <input
+              type="password"
+              maxLength={4}
+              required
+              placeholder="पिन पुन्हा टाका"
+              value={confirmPinInput}
+              onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, ''))}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', boxSizing: 'border-box', textAlign: 'center', fontSize: '20px' }}
+            />
+            <button type="submit" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+              पिन सेव्ह करा
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // SCREEN 3: ENTER 4-DIGIT PIN
+  if (screen === 'enter_pin') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '16px', fontFamily: 'sans-serif' }}>
+        <div style={{ maxWidth: '360px', width: '100%', padding: '28px', borderRadius: '16px', background: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', marginBottom: '6px' }}>AIRAVAT लॉक</h2>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>ॲप उघडण्यासाठी आपला ४ अंकी पिन टाका</p>
+
+          <form onSubmit={handleVerifyPin}>
+            <input
+              type="password"
+              maxLength={4}
+              required
+              autoFocus
+              placeholder="••••"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', boxSizing: 'border-box', textAlign: 'center', fontSize: '24px', letterSpacing: '8px' }}
+            />
+            <button type="submit" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+              उघडा
+            </button>
+          </form>
+
+          <button onClick={handleLogout} style={{ marginTop: '16px', background: 'none', border: 'none', color: '#ef4444', fontSize: '13px', cursor: 'pointer' }}>
+            दुसऱ्या खात्याने लॉगिन करा
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // SCREEN 4: DASHBOARD & APPLICATION FORM
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', padding: '24px 16px', fontFamily: 'sans-serif' }}>
+      <div style={{ maxWidth: '560px', margin: '0 auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
+          <div>
+            <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>AIRAVAT सेवा</h1>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>{session?.user?.email}</p>
           </div>
+          <button onClick={handleLogout} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+            लॉगआउट
+          </button>
         </div>
 
-        {/* Services Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredServices.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between"
+        {formMsg && (
+          <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', background: formMsg.includes('त्रुटी') ? '#fef2f2' : '#f0fdf4', color: formMsg.includes('त्रुटी') ? '#991b1b' : '#166534' }}>
+            {formMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmitApplication} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>पूर्ण नाव *</label>
+            <input
+              type="text"
+              required
+              value={formData.applicant_name}
+              onChange={(e) => setFormData({ ...formData, applicant_name: e.target.value })}
+              placeholder="नाव टाका"
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>मोबाईल नंबर *</label>
+            <input
+              type="tel"
+              required
+              value={formData.phone_number}
+              onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+              placeholder="१० अंकी नंबर"
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>आवश्यक सेवा *</label>
+            <select
+              value={formData.service_name}
+              onChange={(e) => setFormData({ ...formData, service_name: e.target.value })}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', background: '#fff' }}
             >
-              <div>
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
-                    {t.categories[item.category as keyof typeof t.categories] || item.category}
-                  </span>
-                  <span
-                    className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                      item.status === "Available"
-                        ? "bg-teal-50 text-teal-700 border border-teal-200"
-                        : "bg-amber-50 text-amber-700 border border-amber-200"
-                    }`}
-                  >
-                    {item.status === "Available" ? t.applyNow : t.comingSoon}
+              <option value="नवीन पॅन कार्ड">नवीन पॅन कार्ड</option>
+              <option value="उत्पन्न दाखला">उत्पन्न दाखला</option>
+              <option value="नवीन आधार कार्ड">नवीन आधार कार्ड</option>
+              <option value="रेशन कार्ड सेवा">रेशन कार्ड सेवा</option>
+              <option value="इतर अर्ज">इतर अर्ज</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>टीप (पर्यायी)</label>
+            <textarea
+              rows={2}
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              placeholder="काही सूचना असल्यास..."
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <button type="submit" disabled={formLoading} style={{ padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+            {formLoading ? 'अर्ज जमा होत आहे...' : 'अर्ज जमा करा (Submit)'}
+          </button>
+        </form>
+
+        {/* User Che Purane Arj (Cloud Backup) */}
+        <div style={{ marginTop: '28px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', marginBottom: '10px' }}>माझे आधीचे अर्ज</h3>
+          {myApplications.length === 0 ? (
+            <p style={{ fontSize: '13px', color: '#94a3b8' }}>अजून कोणताही अर्ज भरलेला नाही.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {myApplications.map((app) => (
+                <div key={app.id} style={{ padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong style={{ fontSize: '13px', color: '#334155' }}>{app.service_name}</strong>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>{app.applicant_name} ({app.phone_number})</div>
+                  </div>
+                  <span style={{ fontSize: '11px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px', background: app.status === 'Approved' ? '#dcfce7' : '#fef9c3', color: app.status === 'Approved' ? '#15803d' : '#854d0e' }}>
+                    {app.status}
                   </span>
                 </div>
-
-                <h3 className="text-base font-bold text-slate-900 mt-2 mb-1">
-                  {item.name}
-                </h3>
-                <p className="text-xs text-slate-600 mb-4 leading-relaxed">{item.desc}</p>
-
-                <div className="bg-slate-50 rounded-xl p-3 space-y-1.5 border border-slate-100 mb-4 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>{t.estFee}</span>
-                    <strong className="text-slate-900">{item.charges}</strong>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>{t.timeline}</span>
-                    <strong className="text-slate-900">{item.processingTime}</strong>
-                  </div>
-                  <div className="text-slate-500 text-[11px] pt-1 border-t border-slate-200">
-                    <strong>{t.requiredDocs}</strong> {item.requiredDocs.join(", ")}
-                  </div>
-                </div>
-              </div>
-
-              {item.status === "Available" ? (
-                <Link
-                  href="/apply"
-                  className="w-full bg-slate-900 hover:bg-teal-600 text-white font-medium py-2 rounded-lg text-xs transition text-center block"
-                >
-                  {t.applyNow}
-                </Link>
-              ) : (
-                <button
-                  disabled
-                  className="w-full bg-slate-100 text-slate-400 font-medium py-2 rounded-lg text-xs cursor-not-allowed text-center"
-                >
-                  {t.comingSoon}
-                </button>
-              )}
+              ))}
             </div>
-          ))}
+          )}
         </div>
-      </main>
-
-      {/* Document Vault Notice */}
-      <section className="bg-slate-100 border-t border-slate-200 py-8 px-4 mt-8">
-        <div className="max-w-4xl mx-auto text-center space-y-2">
-          <h4 className="font-bold text-slate-800">{t.vaultBannerTitle}</h4>
-          <p className="text-xs md:text-sm text-slate-600 max-w-2xl mx-auto">
-            {t.vaultBannerDesc}
-          </p>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }
