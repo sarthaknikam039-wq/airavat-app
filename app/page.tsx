@@ -1,407 +1,271 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
-export default function AiravatApp() {
-  // Screens: 'loading' | 'email_otp' | 'set_pin' | 'enter_pin' | 'dashboard'
-  const [screen, setScreen] = useState<'loading' | 'email_otp' | 'set_pin' | 'enter_pin' | 'dashboard'>('loading');
+export default function Home() {
+  const router = useRouter();
 
-  const [session, setSession] = useState<any>(null);
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  // Authentication States
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState<"email" | "otp">("email");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
 
-  // PIN states
-  const [pinInput, setPinInput] = useState('');
-  const [confirmPinInput, setConfirmPinInput] = useState('');
-
-  // Form states
-  const [formData, setFormData] = useState({
-    applicant_name: '',
-    phone_number: '',
-    service_name: 'नवीन पॅन कार्ड',
-    notes: '',
-  });
-  const [formLoading, setFormLoading] = useState(false);
-  const [formMsg, setFormMsg] = useState('');
-  const [myApplications, setMyApplications] = useState<any[]>([]);
-
-  // 1. App सुरू झाल्यावर session आणि PIN तपासणे (Persistent Login)
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleInitialAuth(session);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        setSession(null);
-        setScreen('email_otp');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleInitialAuth = (currentSession: any) => {
-    if (!currentSession) {
-      setScreen('email_otp');
-    } else {
-      setSession(currentSession);
-      const savedPin = localStorage.getItem(`airavat_pin_${currentSession.user.id}`);
-      if (savedPin) {
-        setScreen('enter_pin'); // PIN आधीच सेट असेल तर PIN मागणे
-      } else {
-        setScreen('set_pin'); // नसेल तर नवा PIN सेट करायला सांगणे
-      }
-    }
-  };
-
-  // 2. Email वर OTP पाठवणे
+  // OTP भेजने का फंक्शन
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email) return;
+
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    if (error) {
-      alert('त्रुटी: ' + error.message);
-    } else {
-      setOtpSent(true);
-      alert('तुमच्या ईमेलवर ६ अंकी OTP पाठवला आहे!');
-    }
-    setLoading(false);
-  };
-
-  // 3. OTP Verify करणे
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const { data, error } = await supabase.auth.verifyOtp({
-      email,
-      token: otp,
-      type: 'email',
-    });
-
-    if (error) {
-      alert('चुकीचा OTP: ' + error.message);
-    } else if (data.session) {
-      setSession(data.session);
-      const savedPin = localStorage.getItem(`airavat_pin_${data.session.user.id}`);
-      if (savedPin) {
-        setScreen('dashboard');
-        fetchUserApplications(data.session.user.id);
-      } else {
-        setScreen('set_pin');
-      }
-    }
-    setLoading(false);
-  };
-
-  // 4. नवा ४ अंकी PIN सेट करणे
-  const handleSaveNewPin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pinInput.length !== 4) {
-      alert('पिन फक्त ४ अंकांचा असावा!');
-      return;
-    }
-    if (pinInput !== confirmPinInput) {
-      alert('दोन्ही पिन जुळत नाहीत!');
-      return;
-    }
-    if (session) {
-      localStorage.setItem(`airavat_pin_${session.user.id}`, pinInput);
-      alert('पिन यशस्वीरीत्या सेट झाला!');
-      setScreen('dashboard');
-      fetchUserApplications(session.user.id);
-    }
-  };
-
-  // 5. सेव्ह केलेला PIN तपासून आत जाणे
-  const handleVerifyPin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session) return;
-    const savedPin = localStorage.getItem(`airavat_pin_${session.user.id}`);
-    if (pinInput === savedPin) {
-      setScreen('dashboard');
-      fetchUserApplications(session.user.id);
-    } else {
-      alert('चुकीचा पिन! पुन्हा प्रयत्न करा.');
-      setPinInput('');
-    }
-  };
-
-  // 6. User चा जुना डेटा Supabase मधून आणणे (Cloud Backup)
-  const fetchUserApplications = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('applications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setMyApplications(data);
-    }
-  };
-
-  // 7. अर्ज सबमिट करणे (User ID जोडून)
-  const handleSubmitApplication = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session) return;
-    setFormLoading(true);
-    setFormMsg('');
+    setMessage("");
 
     try {
-      const { error } = await supabase.from('applications').insert([
-        {
-          user_id: session.user.id,
-          applicant_name: formData.applicant_name,
-          phone_number: formData.phone_number,
-          service_name: formData.service_name,
-          notes: formData.notes,
-          status: 'Pending',
-        },
-      ]);
+      await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: true },
+      });
+      setStep("otp");
+      setMessage("Testing OTP: 123456 या अपना ईमेल चेक करें");
+    } catch (err: any) {
+      setStep("otp");
+      setMessage("Testing OTP: 123456 का उपयोग करें");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // OTP वेरीफाई करने का फंक्शन
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) return;
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      // 123456 डालते ही सीधा लॉगिन बाईपास
+      if (otp === "123456") {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("airavat_user", JSON.stringify({ email }));
+        }
+        setShowAuthModal(false);
+        router.push("/apply");
+        return;
+      }
+
+      // Supabase रियल वेरिफिकेशन
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: otp,
+        type: "email",
+      });
 
       if (error) throw error;
 
-      setFormMsg('अर्ज यशस्वीरीत्या जमा झाला आहे!');
-      setFormData({ applicant_name: '', phone_number: '', service_name: 'नवीन पॅन कार्ड', notes: '' });
-      fetchUserApplications(session.user.id);
+      if (data.session) {
+        setShowAuthModal(false);
+        router.push("/apply");
+      }
     } catch (err: any) {
-      setFormMsg(`त्रुटी: ${err.message || 'काहीतरी चूक झाली'}`);
+      setMessage("अमान्य OTP! कृपया '123456' डालकर लॉगिन करें।");
     } finally {
-      setFormLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setOtpSent(false);
-    setEmail('');
-    setOtp('');
-    setPinInput('');
-    setScreen('email_otp');
+  const handleApplyClick = () => {
+    setShowAuthModal(true);
   };
 
-  // --- RENDERING SCREENS ---
-
-  if (screen === 'loading') {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: 'sans-serif' }}>
-        <p style={{ color: '#475569', fontWeight: 600 }}>ॲप सुरू होत आहे...</p>
-      </div>
-    );
-  }
-
-  // SCREEN 1: EMAIL OTP
-  if (screen === 'email_otp') {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '16px', fontFamily: 'sans-serif' }}>
-        <div style={{ maxWidth: '360px', width: '100%', padding: '28px', borderRadius: '16px', background: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
-          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#0f172a', marginBottom: '8px' }}>AIRAVAT Seva</h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>सुरू करण्यासाठी आपला ईमेल व्हेरिफाय करा</p>
-
-          {!otpSent ? (
-            <form onSubmit={handleSendOtp}>
-              <input
-                type="email"
-                required
-                placeholder="आपला ईमेल आयडी टाका"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', boxSizing: 'border-box' }}
-              />
-              <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-                {loading ? 'OTP पाठवत आहे...' : 'OTP मिळवा'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp}>
-              <input
-                type="text"
-                required
-                placeholder="६ अंकी OTP टाका"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', boxSizing: 'border-box', textAlign: 'center', fontSize: '18px', letterSpacing: '4px' }}
-              />
-              <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#16a34a', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-                {loading ? 'तपासत आहे...' : 'लॉगिन करा'}
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // SCREEN 2: SET 4-DIGIT PIN
-  if (screen === 'set_pin') {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '16px', fontFamily: 'sans-serif' }}>
-        <div style={{ maxWidth: '360px', width: '100%', padding: '28px', borderRadius: '16px', background: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', marginBottom: '6px' }}>४ अंकी पिन सेट करा</h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>पुढच्या वेळी ॲप उघडताना थेट पिनने लॉगिन करता येईल</p>
-
-          <form onSubmit={handleSaveNewPin}>
-            <input
-              type="password"
-              maxLength={4}
-              required
-              placeholder="नवा ४ अंकी पिन"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
-              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '12px', boxSizing: 'border-box', textAlign: 'center', fontSize: '20px' }}
-            />
-            <input
-              type="password"
-              maxLength={4}
-              required
-              placeholder="पिन पुन्हा टाका"
-              value={confirmPinInput}
-              onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, ''))}
-              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', boxSizing: 'border-box', textAlign: 'center', fontSize: '20px' }}
-            />
-            <button type="submit" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-              पिन सेव्ह करा
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  // SCREEN 3: ENTER 4-DIGIT PIN
-  if (screen === 'enter_pin') {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', padding: '16px', fontFamily: 'sans-serif' }}>
-        <div style={{ maxWidth: '360px', width: '100%', padding: '28px', borderRadius: '16px', background: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', marginBottom: '6px' }}>AIRAVAT लॉक</h2>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>ॲप उघडण्यासाठी आपला ४ अंकी पिन टाका</p>
-
-          <form onSubmit={handleVerifyPin}>
-            <input
-              type="password"
-              maxLength={4}
-              required
-              autoFocus
-              placeholder="••••"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
-              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', boxSizing: 'border-box', textAlign: 'center', fontSize: '24px', letterSpacing: '8px' }}
-            />
-            <button type="submit" style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-              उघडा
-            </button>
-          </form>
-
-          <button onClick={handleLogout} style={{ marginTop: '16px', background: 'none', border: 'none', color: '#ef4444', fontSize: '13px', cursor: 'pointer' }}>
-            दुसऱ्या खात्याने लॉगिन करा
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // SCREEN 4: DASHBOARD & APPLICATION FORM
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', padding: '24px 16px', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '560px', margin: '0 auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
-          <div>
-            <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>AIRAVAT सेवा</h1>
-            <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>{session?.user?.email}</p>
-          </div>
-          <button onClick={handleLogout} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-            लॉगआउट
-          </button>
-        </div>
-
-        {formMsg && (
-          <div style={{ padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', background: formMsg.includes('त्रुटी') ? '#fef2f2' : '#f0fdf4', color: formMsg.includes('त्रुटी') ? '#991b1b' : '#166534' }}>
-            {formMsg}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmitApplication} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>पूर्ण नाव *</label>
-            <input
-              type="text"
-              required
-              value={formData.applicant_name}
-              onChange={(e) => setFormData({ ...formData, applicant_name: e.target.value })}
-              placeholder="नाव टाका"
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-            />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {/* Navigation Bar */}
+      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xl font-black tracking-wider text-white">
+              AIRAVAT <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded font-normal">INDIA</span>
+            </span>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>मोबाईल नंबर *</label>
-            <input
-              type="tel"
-              required
-              value={formData.phone_number}
-              onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-              placeholder="१० अंकी नंबर"
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>आवश्यक सेवा *</label>
-            <select
-              value={formData.service_name}
-              onChange={(e) => setFormData({ ...formData, service_name: e.target.value })}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box', background: '#fff' }}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push("/track")}
+              className="text-xs md:text-sm text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60"
             >
-              <option value="नवीन पॅन कार्ड">नवीन पॅन कार्ड</option>
-              <option value="उत्पन्न दाखला">उत्पन्न दाखला</option>
-              <option value="नवीन आधार कार्ड">नवीन आधार कार्ड</option>
-              <option value="रेशन कार्ड सेवा">रेशन कार्ड सेवा</option>
-              <option value="इतर अर्ज">इतर अर्ज</option>
-            </select>
+              Track Request
+            </button>
+            <button
+              onClick={handleApplyClick}
+              className="text-xs md:text-sm bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-1.5 rounded-lg transition"
+            >
+              Login / Apply
+            </button>
           </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>टीप (पर्यायी)</label>
-            <textarea
-              rows={2}
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="काही सूचना असल्यास..."
-              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <button type="submit" disabled={formLoading} style={{ padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-            {formLoading ? 'अर्ज जमा होत आहे...' : 'अर्ज जमा करा (Submit)'}
-          </button>
-        </form>
-
-        {/* User Che Purane Arj (Cloud Backup) */}
-        <div style={{ marginTop: '28px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', marginBottom: '10px' }}>माझे आधीचे अर्ज</h3>
-          {myApplications.length === 0 ? (
-            <p style={{ fontSize: '13px', color: '#94a3b8' }}>अजून कोणताही अर्ज भरलेला नाही.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {myApplications.map((app) => (
-                <div key={app.id} style={{ padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong style={{ fontSize: '13px', color: '#334155' }}>{app.service_name}</strong>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>{app.applicant_name} ({app.phone_number})</div>
-                  </div>
-                  <span style={{ fontSize: '11px', fontWeight: 600, padding: '4px 8px', borderRadius: '4px', background: app.status === 'Approved' ? '#dcfce7' : '#fef9c3', color: app.status === 'Approved' ? '#15803d' : '#854d0e' }}>
-                    {app.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-      </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="flex-1 max-w-5xl mx-auto px-4 pt-16 pb-20 text-center flex flex-col items-center justify-center">
+        <div className="inline-block bg-blue-950/70 border border-blue-800/60 text-blue-300 text-xs px-3 py-1 rounded-full mb-6 font-medium">
+          Professional Government & Digital Services
+        </div>
+
+        <h1 className="text-3xl md:text-6xl font-extrabold tracking-tight text-white mb-6 leading-tight">
+          Complicated Forms? <br />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">
+            AIRAVAT Team Handles It For You.
+          </span>
+        </h1>
+
+        <p className="max-w-2xl text-slate-400 text-sm md:text-lg mb-8 leading-relaxed">
+          Upload your requirements once. Our expert staff prepares, verifies, and submits your
+          applications accurately with end-to-end tracking.
+        </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          <button
+            onClick={handleApplyClick}
+            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-8 py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition text-base"
+          >
+            Apply For Service
+          </button>
+          <button
+            onClick={() => router.push("/track")}
+            className="border border-slate-700 hover:border-slate-600 bg-slate-900/80 text-slate-200 px-6 py-3.5 rounded-xl transition text-base"
+          >
+            Track Status
+          </button>
+        </div>
+
+        {/* Feature Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16 w-full text-left">
+          <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl">
+            <div className="w-10 h-10 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold mb-4">
+              01
+            </div>
+            <h3 className="font-semibold text-white mb-2">Upload Details</h3>
+            <p className="text-sm text-slate-400">
+              Submit your basic documents and instructions securely through our portal.
+            </p>
+          </div>
+
+          <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl">
+            <div className="w-10 h-10 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold mb-4">
+              02
+            </div>
+            <h3 className="font-semibold text-white mb-2">Expert Review</h3>
+            <p className="text-sm text-slate-400">
+              Our specialists verify every parameter to prevent rejection or delays.
+            </p>
+          </div>
+
+          <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl">
+            <div className="w-10 h-10 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold mb-4">
+              03
+            </div>
+            <h3 className="font-semibold text-white mb-2">Instant Delivery</h3>
+            <p className="text-sm text-slate-400">
+              Get final acknowledgment receipts and submitted files directly to your vault.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Login & OTP Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-xl font-bold text-white text-center mb-1">
+              AIRAVAT Portal Login
+            </h2>
+            <p className="text-slate-400 text-xs text-center mb-6">
+              सेवा अर्ज भरण्यासाठी 6-अंकी कोड टाकून लॉगिन करा
+            </p>
+
+            {message && (
+              <div className="bg-blue-950/80 border border-blue-800 text-blue-300 text-xs p-3 rounded-lg text-center mb-4">
+                {message}
+              </div>
+            )}
+
+            {step === "email" ? (
+              <form onSubmit={handleSendOtp} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-xl transition text-sm"
+                >
+                  {loading ? "Sending..." : "Get OTP"}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Enter 6-Digit OTP
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    placeholder="123456"
+                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-center text-lg tracking-widest focus:outline-none focus:border-blue-500 font-mono"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1.5 text-center">
+                    (टेस्टिंगसाठी थेट <span className="text-blue-400 font-bold">123456</span> टाका)
+                  </p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-green-600 hover:bg-green-500 text-white font-medium py-2.5 rounded-xl transition text-sm"
+                >
+                  {loading ? "Verifying..." : "Verify & Continue"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep("email")}
+                  className="w-full text-slate-400 hover:text-slate-200 text-xs py-1"
+                >
+                  Use different email
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
+        © 2026 AIRAVAT INDIA. All rights reserved.
+      </footer>
     </div>
   );
 }
